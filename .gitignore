@@ -1,0 +1,35 @@
+# Datos (se versionan con DVC, no con Git)
+DATA/raw/*
+DATA/processed/*
+!DATA/raw/.gitkeep
+!DATA/processed/.gitkeep
+*.csv
+!**/*.csv.dvc
+ 
+# Modelos entrenados
+models/*
+!models/.gitkeep
+*.pkl
+*.joblib
+ 
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+ 
+# Entornos virtuales
+venv/
+.venv/
+env/
+ 
+# Variables de entorno / credenciales
+.env
+credentials.json
+ 
+# MLflow
+mlruns/
+ 
+# IDE / sistema
+.vscode/
+.idea/
+Thumbs.db

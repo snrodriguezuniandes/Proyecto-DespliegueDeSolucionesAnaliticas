@@ -1,0 +1,35 @@
+# --- Manejo de datos ---
+pandas
+numpy
+pyarrow
+
+# --- Versionamiento de datos ---
+dvc
+dvc-gdrive          # remoto en Google Drive (quitar si usan S3)
+# dvc-s3            # descomentar si usan AWS S3 / AWS Academy
+
+# --- Modelado ---
+scikit-learn
+xgboost
+lightgbm
+statsmodels
+
+# --- Experimentos ---
+mlflow
+
+# --- API ---
+fastapi
+uvicorn[standard]
+pydantic
+
+# --- Tablero ---
+streamlit
+plotly
+
+# --- Visualización (EDA) ---
+matplotlib
+seaborn
+
+# --- Utilidades ---
+python-dotenv
+jupyter
