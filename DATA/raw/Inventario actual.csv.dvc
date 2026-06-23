@@ -1,0 +1,5 @@
+outs:
+- md5: aa8cb5e40fe62073c233c46409259149
+  size: 73998
+  hash: md5
+  path: Inventario actual.csv
