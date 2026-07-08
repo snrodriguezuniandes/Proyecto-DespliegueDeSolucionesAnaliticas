@@ -8,9 +8,7 @@ import plotly.express as px
 import joblib
 from datetime import timedelta
 
-# ============================================
 # CONFIGURACIÓN
-# ============================================
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
                 suppress_callback_exceptions=True)
 app.title = "Mercalia — Planeación de Demanda e Inventario"
@@ -23,9 +21,8 @@ SKUS = {
 COLORES = {'19127': '#1f77b4', '294000': '#ff7f0e', '455151': '#2ca02c'}
 MAPE_MODELOS = {'19127': 24.10, '294000': None, '455151': None}
 
-# ============================================
+
 # FUNCIONES DE DATOS
-# ============================================
 def cargar_ventas(sku, pais='Colombia'):
     df = pd.read_csv(f"DATA/raw/ventashistoricas_{sku}.csv")
     df['Transaction_Date'] = pd.to_datetime(df['Transaction_Date'])
@@ -72,9 +69,9 @@ def hacer_forecast(sku, n_dias=30):
     except FileNotFoundError:
         return None
 
-# ============================================
+
 # LAYOUT
-# ============================================
+
 SIDEBAR = dbc.Col([
     html.Div([
         html.H4("📦 Mercalia", className="text-white fw-bold mb-4"),
@@ -94,17 +91,15 @@ app.layout = dbc.Container([
     ])
 ], fluid=True)
 
-# ============================================
+
 # PÁGINA 1: ESTATUS GENERAL — ALE
-# ============================================
+
 layout_estatus = html.Div([
     html.H2("Estatus general"),
     dbc.Alert("Esta página está siendo desarrollada por Ale. 🔧", color="warning")
 ])
 
-# ============================================
 # PÁGINA 2: DEMANDA Y FORECAST — GABI
-# ============================================
 layout_demanda = html.Div([
     html.H2("Demanda y forecast", className="mb-4"),
     dbc.Row([
@@ -146,17 +141,13 @@ layout_demanda = html.Div([
     ])
 ])
 
-# ============================================
 # PÁGINA 3: REABASTECIMIENTO — SHELSY
-# ============================================
 layout_reabastecimiento = html.Div([
     html.H2("Reabastecimiento"),
     dbc.Alert("Esta página está siendo desarrollada por Shelsy. 🔧", color="warning")
 ])
 
-# ============================================
 # ROUTING
-# ============================================
 @app.callback(Output("contenido-pagina", "children"), Input("url", "pathname"))
 def render_pagina(pathname):
     if pathname == "/demanda":
@@ -166,9 +157,7 @@ def render_pagina(pathname):
     else:
         return layout_estatus
 
-# ============================================
 # CALLBACKS PÁGINA 2
-# ============================================
 @app.callback(Output("pais-selector", "options"), Input("sku-selector", "value"))
 def actualizar_paises(sku):
     return [{"label": p, "value": p} for p in get_paises(sku)]
