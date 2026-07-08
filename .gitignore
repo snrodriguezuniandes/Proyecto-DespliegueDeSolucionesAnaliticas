@@ -9,6 +9,7 @@ DATA/processed/*
 # Modelos entrenados
 models/*
 !models/.gitkeep
+!models/*.dvc
 *.pkl
 *.joblib
  
