@@ -3,33 +3,42 @@ DATA/raw/*
 DATA/processed/*
 !DATA/raw/.gitkeep
 !DATA/processed/.gitkeep
+!DATA/raw/*.dvc
+!DATA/processed/*.dvc
+!DATA/raw/.gitignore
+!DATA/processed/.gitignore
+
+# CSV grandes o generados
 *.csv
 !**/*.csv.dvc
- 
-# Modelos entrenados
+
+# Modelos entrenados (se versionan con DVC, no con Git)
 models/*
 !models/.gitkeep
+!models/*.dvc
+!models/.gitignore
 *.pkl
 *.joblib
- 
+
 # Python
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
- 
+
 # Entornos virtuales
 venv/
 .venv/
 env/
- 
+
 # Variables de entorno / credenciales
 .env
 credentials.json
- 
+
 # MLflow
 mlruns/
- 
+notebooks/mlflow.db
+
 # IDE / sistema
 .vscode/
 .idea/
-Thumbs.dbnotebooks/mlflow.db
+Thumbs.db

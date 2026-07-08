@@ -1,0 +1,5 @@
+outs:
+- md5: ca3b01c1a9d6691735db644d5df06b32
+  size: 240
+  hash: md5
+  path: resultados_modelo_294000_Colombia.csv
