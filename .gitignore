@@ -33,4 +33,4 @@ mlruns/
 # IDE / sistema
 .vscode/
 .idea/
-Thumbs.db
+Thumbs.dbnotebooks/mlflow.db
