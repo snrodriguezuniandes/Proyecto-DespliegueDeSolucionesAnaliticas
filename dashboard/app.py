@@ -4,7 +4,6 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
 import joblib
 from datetime import timedelta
 
@@ -20,7 +19,11 @@ SKUS = {
 }
 COLORES = {'19127': '#1f77b4', '294000': '#ff7f0e', '455151': '#2ca02c'}
 MAPE_MODELOS = {'19127': 24.10, '294000': None, '455151': None}
-
+MODELOS = {
+    '19127': 'models/modelo_19127_colombia.pkl',
+    '294000': 'models/modelo_294000_Colombia.pkl',
+    '455151': 'models/modelo_455151_colombia.pkl'
+}
 
 # FUNCIONES DE DATOS
 def cargar_ventas(sku, pais='Colombia'):
@@ -39,7 +42,7 @@ def get_paises(sku):
 
 def hacer_forecast(sku, n_dias=30):
     try:
-        modelo = joblib.load(f"models/modelo_{sku}_colombia.pkl")
+        modelo = joblib.load(MODELOS[sku])
         df = cargar_ventas(sku, 'Colombia')
         historial = df['demanda'].values.tolist()
         ultima_fecha = df['fecha'].max()
@@ -69,16 +72,14 @@ def hacer_forecast(sku, n_dias=30):
     except FileNotFoundError:
         return None
 
-
 # LAYOUT
-
 SIDEBAR = dbc.Col([
     html.Div([
         html.H4("📦 Mercalia", className="text-white fw-bold mb-4"),
         dbc.Nav([
-            dbc.NavLink("📊 Estatus general",     href="/estatus",         active="exact", className="text-white mb-2"),
-            dbc.NavLink("📈 Demanda y forecast",  href="/demanda",         active="exact", className="text-white mb-2"),
-            dbc.NavLink("🚚 Reabastecimiento",    href="/reabastecimiento", active="exact", className="text-white mb-2"),
+            dbc.NavLink("📊 Estatus general",    href="/estatus",          active="exact", className="text-white mb-2"),
+            dbc.NavLink("📈 Demanda y forecast", href="/demanda",          active="exact", className="text-white mb-2"),
+            dbc.NavLink("🚚 Reabastecimiento",   href="/reabastecimiento", active="exact", className="text-white mb-2"),
         ], vertical=True),
     ], className="p-3 h-100")
 ], width=2, style={"backgroundColor": "#1a3a5c", "minHeight": "100vh"})
@@ -91,9 +92,7 @@ app.layout = dbc.Container([
     ])
 ], fluid=True)
 
-
 # PÁGINA 1: ESTATUS GENERAL — ALE
-
 layout_estatus = html.Div([
     html.H2("Estatus general"),
     dbc.Alert("Esta página está siendo desarrollada por Ale. 🔧", color="warning")
@@ -208,7 +207,7 @@ def actualizar_pagina_demanda(sku, pais, horizonte):
         name='Histórico', line=dict(color=color, width=1.5)
     ))
 
-    forecast_df = hacer_forecast(sku, horizonte) if sku == '19127' else None
+    forecast_df = hacer_forecast(sku, horizonte)
     if forecast_df is not None:
         fig.add_trace(go.Scatter(
             x=forecast_df['fecha'], y=forecast_df['forecast'],
@@ -223,7 +222,7 @@ def actualizar_pagina_demanda(sku, pais, horizonte):
             name='Banda ±15%'
         ))
         fig.add_vline(x=str(df['fecha'].max()), line_dash="dot", line_color="gray")
-    elif sku != '19127':
+    else:
         fig.add_annotation(text="Modelo pendiente para este SKU",
                            xref="paper", yref="paper", x=0.5, y=0.5,
                            showarrow=False, font=dict(size=14, color="gray"))

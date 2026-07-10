@@ -1,0 +1,5 @@
+outs:
+- md5: 3a0951ff3dd90f01aa4648757cbc6bf1
+  size: 350400
+  hash: md5
+  path: modelo_19127_colombia.pkl
