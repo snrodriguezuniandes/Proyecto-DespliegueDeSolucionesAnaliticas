@@ -18,7 +18,7 @@ SKUS = {
     '455151': 'MS 5-tier Storage Rack'
 }
 COLORES = {'19127': '#1f77b4', '294000': '#ff7f0e', '455151': '#2ca02c'}
-MAPE_MODELOS = {'19127': 24.10, '294000': None, '455151': None}
+MAPE_MODELOS = {'19127': 24.10, '294000': None, '455151': 49.28}
 MODELOS = {
     '19127': 'models/modelo_19127_colombia.pkl',
     '294000': 'models/modelo_294000_Colombia.pkl',
@@ -141,10 +141,196 @@ layout_demanda = html.Div([
 ])
 
 # PÁGINA 3: REABASTECIMIENTO — SHELSY
+
+def cargar_datos_reabastecimiento(sku):
+    LEAD_TIMES = {'19127': 15.2, '294000': 36.3, '455151': 109.7}
+    PO_FILES = {
+        '19127': 'DATA/raw/POs_19127.csv',
+        '294000': 'DATA/raw/POs_2974000.csv',
+        '455151': 'DATA/raw/POs_455151.csv'
+    }
+    inv = pd.read_csv('DATA/raw/Inventario actual.csv', sep=';',
+                      skiprows=2, encoding='utf-8-sig')
+    inv['In Loc Days of Supply'] = pd.to_numeric(
+        inv['In Loc Days of Supply'], errors='coerce')
+    inv['FCST Next 30 Days'] = pd.to_numeric(
+        inv['FCST Next 30 Days'], errors='coerce')
+
+    sub = inv[inv['Item number'].astype(str).str.strip() == sku]
+    inv_actual = sub['End balance'].sum()
+    dias_stock = sub[sub['In Loc Days of Supply'] < 999]['In Loc Days of Supply'].mean()
+    fcst_horizonte = sub['FCST Next 30 Days'].sum()
+
+    po = pd.read_csv(PO_FILES[sku], parse_dates=['Revised_Delivery_Date'])
+    abiertas = po[po['Status'] == 'Open']
+    pos_camino = abiertas['Quantity_Open'].sum()
+    prox_entrega = abiertas['Revised_Delivery_Date'].min() if len(abiertas) else None
+
+    lt = LEAD_TIMES[sku]
+    demanda_diaria = fcst_horizonte / 30 if fcst_horizonte else 1
+    fecha_quiebre = pd.Timestamp.now() + pd.Timedelta(days=dias_stock) if dias_stock else None
+
+    if dias_stock < lt:
+        estado = 'Reabastecer'
+        color_estado = 'danger'
+    elif dias_stock < lt * 1.5:
+        estado = 'Monitorear'
+        color_estado = 'warning'
+    else:
+        estado = 'Normal'
+        color_estado = 'success'
+
+    return {
+        'inv_actual': inv_actual,
+        'fcst_horizonte': fcst_horizonte,
+        'pos_camino': pos_camino,
+        'dias_stock': dias_stock,
+        'fecha_quiebre': fecha_quiebre,
+        'estado': estado,
+        'color_estado': color_estado,
+        'abiertas': abiertas,
+        'demanda_diaria': demanda_diaria,
+        'lead_time': lt
+    }
+
 layout_reabastecimiento = html.Div([
-    html.H2("Reabastecimiento"),
-    dbc.Alert("Esta página está siendo desarrollada por Shelsy. 🔧", color="warning")
+    html.H2("Reabastecimiento", className="mb-4"),
+    dbc.Row([
+        dbc.Col([
+            html.Label("SKU"),
+            dcc.Dropdown(
+                id="sku-reab",
+                options=[{"label": f"{k} — {v}", "value": k} for k, v in SKUS.items()],
+                value="455151", clearable=False
+            )
+        ], width=4),
+        dbc.Col([
+            html.Label("Horizonte (días)"),
+            dcc.Slider(id="horizonte-reab", min=7, max=90, step=7,
+                       value=30, marks={7:"7d", 30:"30d", 60:"60d", 90:"90d"})
+        ], width=4),
+    ], className="mb-4"),
+
+    dbc.Row(id="kpis-reab", className="mb-4"),
+
+    dbc.Card([
+        dbc.CardHeader("Túnel de reabastecimiento"),
+        dbc.CardBody(dcc.Graph(id="grafica-reab"))
+    ], className="mb-4"),
+
+    dbc.Card([
+        dbc.CardHeader("Próximas recepciones"),
+        dbc.CardBody(html.Div(id="tabla-reab"))
+    ])
 ])
+
+@app.callback(
+    Output("kpis-reab", "children"),
+    Output("grafica-reab", "figure"),
+    Output("tabla-reab", "children"),
+    Input("sku-reab", "value"),
+    Input("horizonte-reab", "value"),
+)
+def actualizar_reabastecimiento(sku, horizonte):
+    if not sku:
+        return [], go.Figure(), html.Div()
+
+    datos = cargar_datos_reabastecimiento(sku)
+
+    # KPIs
+    kpis = dbc.Row([
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("Inventario actual", className="text-muted small mb-1"),
+            html.H4(f"{datos['inv_actual']:,.0f} u", className="fw-bold")
+        ])), width=2),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("Forecast horizonte", className="text-muted small mb-1"),
+            html.H4(f"{datos['fcst_horizonte']:,.0f} u", className="fw-bold")
+        ])), width=2),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("POs en camino", className="text-muted small mb-1"),
+            html.H4(f"{datos['pos_camino']:,.0f} u", className="fw-bold")
+        ])), width=2),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("Días de stock", className="text-muted small mb-1"),
+            html.H4(f"{datos['dias_stock']:.1f} días", className="fw-bold")
+        ])), width=2),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("Fecha posible de quiebre", className="text-muted small mb-1"),
+            html.H4(datos['fecha_quiebre'].strftime('%d/%m/%Y') if datos['fecha_quiebre'] else '—',
+                    className="fw-bold text-danger")
+        ])), width=2),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("Estado", className="text-muted small mb-1"),
+            dbc.Badge(datos['estado'], color=datos['color_estado'],
+                      className="px-3 py-2 fs-6")
+        ])), width=2),
+    ])
+
+    # Túnel de reabastecimiento
+    fechas = pd.date_range(start=pd.Timestamp.now(), periods=horizonte)
+    inv_proyectado = [max(0, datos['inv_actual'] - datos['demanda_diaria'] * i)
+                      for i in range(horizonte)]
+
+    # Agregar impacto de POs
+    abiertas = datos['abiertas'].copy()
+    for i, fecha in enumerate(fechas):
+        entregas = abiertas[abiertas['Revised_Delivery_Date'] <= fecha]['Quantity_Open'].sum()
+        inv_proyectado[i] = max(0, inv_proyectado[i] + entregas)
+
+    stock_min = datos['demanda_diaria'] * datos['lead_time']
+    stock_max = datos['demanda_diaria'] * datos['lead_time'] * 3
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=fechas, y=inv_proyectado,
+        name='Inventario proyectado',
+        line=dict(color='#1f77b4', width=2)
+    ))
+    fig.add_trace(go.Scatter(
+        x=fechas, y=[datos['demanda_diaria']] * horizonte,
+        name='Forecast de demanda',
+        line=dict(color='#ff7f0e', dash='dash', width=1.5)
+    ))
+    fig.add_hline(y=stock_min, line_dash="dot", line_color="red",
+                  annotation_text="Stock mínimo")
+    fig.add_hline(y=stock_max, line_dash="dot", line_color="green",
+                  annotation_text="Stock máximo")
+    fig.update_layout(
+        height=350, margin=dict(l=20, r=20, t=30, b=20),
+        legend=dict(orientation="h", y=1.1),
+        yaxis_title="Unidades",
+        plot_bgcolor='white', paper_bgcolor='white'
+    )
+    fig.update_xaxes(showgrid=True, gridcolor='#f0f0f0')
+    fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
+
+    # Tabla próximas recepciones
+    if len(abiertas) > 0:
+        filas = []
+        for _, row in abiertas.iterrows():
+            dias_cobertura = row['Quantity_Open'] / datos['demanda_diaria'] if datos['demanda_diaria'] else 0
+            filas.append(html.Tr([
+                html.Td(row.get('Revised_Delivery_Date', '—').strftime('%d/%m/%Y')
+                        if pd.notna(row.get('Revised_Delivery_Date')) else '—'),
+                html.Td(str(row.get('Purchase_Order', '—'))),
+                html.Td(f"{row['Quantity_Open']:,.0f}", className="text-center"),
+                html.Td(f"{dias_cobertura:.1f} días", className="text-center"),
+                html.Td(row.get('Vendor Name', '—')),
+            ]))
+        tabla = dbc.Table([
+            html.Thead(html.Tr([
+                html.Th("Fecha entrega"), html.Th("PO"),
+                html.Th("Cantidad", className="text-center"),
+                html.Th("Cobertura aportada", className="text-center"),
+                html.Th("Proveedor")
+            ], style={"backgroundColor": "#1a3a5c", "color": "white"})),
+            html.Tbody(filas)
+        ], bordered=True, hover=True, responsive=True, size="sm")
+    else:
+        tabla = dbc.Alert("No hay órdenes de compra abiertas para este SKU.", color="info")
+
+    return kpis, fig, tabla
 
 # ROUTING
 @app.callback(Output("contenido-pagina", "children"), Input("url", "pathname"))
