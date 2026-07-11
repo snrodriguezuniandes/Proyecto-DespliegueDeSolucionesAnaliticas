@@ -1,0 +1,5 @@
+outs:
+- md5: aec229ce22cb61ada97714c60221cf51
+  size: 2088
+  hash: md5
+  path: forecast_60d_294000_Colombia.csv

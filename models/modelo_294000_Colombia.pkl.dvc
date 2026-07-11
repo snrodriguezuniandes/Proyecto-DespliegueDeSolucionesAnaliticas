@@ -1,0 +1,5 @@
+outs:
+- md5: 8f188297107be93ca4c2597cd23aa95e
+  size: 21628833
+  hash: md5
+  path: modelo_294000_Colombia.pkl
