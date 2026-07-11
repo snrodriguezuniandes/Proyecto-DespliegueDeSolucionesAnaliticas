@@ -160,7 +160,7 @@ def cargar_estatus():
         for _, row in abiertas.iterrows():
             pos_abiertas_todas.append({
                 'SKU': sku,
-                'PO': row.get('Purchase_Order', '—'),
+                'PO': row.get('Order_Number', '—'),
                 'Fecha entrega': row['Revised_Delivery_Date'].strftime('%d/%m/%Y') if pd.notna(row['Revised_Delivery_Date']) else '—',
                 'Cantidad': f"{row['Quantity_Open']:,.0f}",
                 'Proveedor': row.get('Vendor Name', '—')
@@ -476,36 +476,62 @@ def actualizar_reabastecimiento(sku, horizonte):
 
     # Túnel de reabastecimiento
     fechas = pd.date_range(start=pd.Timestamp.now(), periods=horizonte)
-    inv_proyectado = [max(0, datos['inv_actual'] - datos['demanda_diaria'] * i)
-                      for i in range(horizonte)]
+    demanda_diaria = datos['demanda_diaria']
 
-    # Agregar impacto de POs
+    # Proyección de inventario consumiendo demanda día a día
+    inv_proyectado = []
+    inv_actual = datos['inv_actual']
     abiertas = datos['abiertas'].copy()
-    for i, fecha in enumerate(fechas):
-        entregas = abiertas[abiertas['Revised_Delivery_Date'] <= fecha]['Quantity_Open'].sum()
-        inv_proyectado[i] = max(0, inv_proyectado[i] + entregas)
+    abiertas['Revised_Delivery_Date'] = pd.to_datetime(abiertas['Revised_Delivery_Date'])
 
-    stock_min = datos['demanda_diaria'] * datos['lead_time']
-    stock_max = datos['demanda_diaria'] * datos['lead_time'] * 3
+    for i, fecha in enumerate(fechas):
+        # Sumar lo que llega ese día
+        entregas_hoy = abiertas[abiertas['Revised_Delivery_Date'] == fecha]['Quantity_Open'].sum()
+        inv_actual = max(0, inv_actual - demanda_diaria + entregas_hoy)
+        inv_proyectado.append(inv_actual)
+
+    stock_min = demanda_diaria * 7   # 7 días de cobertura mínima
+    stock_max = demanda_diaria * datos['lead_time']
 
     fig = go.Figure()
+
+    # Área de zona segura
+    fig.add_trace(go.Scatter(
+        x=list(fechas) + list(fechas[::-1]),
+        y=[stock_max]*horizonte + [stock_min]*horizonte,
+        fill='toself', fillcolor='rgba(0,200,100,0.1)',
+        line=dict(color='rgba(255,255,255,0)'),
+        name='Zona segura', showlegend=True
+    ))
+
     fig.add_trace(go.Scatter(
         x=fechas, y=inv_proyectado,
         name='Inventario proyectado',
-        line=dict(color='#1f77b4', width=2)
+        line=dict(color='#1f77b4', width=2.5),
+        fill='toself', fillcolor='rgba(31,119,180,0.1)'
     ))
     fig.add_trace(go.Scatter(
-        x=fechas, y=[datos['demanda_diaria']] * horizonte,
-        name='Forecast de demanda',
+        x=fechas, y=[demanda_diaria] * horizonte,
+        name='Demanda diaria estimada',
         line=dict(color='#ff7f0e', dash='dash', width=1.5)
     ))
-    fig.add_hline(y=stock_min, line_dash="dot", line_color="red",
-                  annotation_text="Stock mínimo")
-    fig.add_hline(y=stock_max, line_dash="dot", line_color="green",
-                  annotation_text="Stock máximo")
+    fig.add_hline(y=stock_min, line_dash="dot", line_color="red", line_width=1.5,
+                annotation_text=f"Stock mínimo ({stock_min:.0f} u)", 
+                annotation_position="top right")
+    fig.add_hline(y=stock_max, line_dash="dot", line_color="green", line_width=1.5,
+                annotation_text=f"Stock máximo ({stock_max:.0f} u)",
+                annotation_position="top right")
+
+    # Marcar las fechas de entrega de POs
+    for _, row in abiertas.iterrows():
+        if pd.notna(row['Revised_Delivery_Date']):
+            fig.add_vline(x=str(row['Revised_Delivery_Date']),
+                        line_dash="dot", line_color="purple", line_width=1,
+                        annotation_text="PO", annotation_position="top")
+
     fig.update_layout(
-        height=350, margin=dict(l=20, r=20, t=30, b=20),
-        legend=dict(orientation="h", y=1.1),
+        height=400, margin=dict(l=20, r=20, t=30, b=20),
+        legend=dict(orientation="h", y=1.12),
         yaxis_title="Unidades",
         plot_bgcolor='white', paper_bgcolor='white'
     )
@@ -520,7 +546,7 @@ def actualizar_reabastecimiento(sku, horizonte):
             filas.append(html.Tr([
                 html.Td(row.get('Revised_Delivery_Date', '—').strftime('%d/%m/%Y')
                         if pd.notna(row.get('Revised_Delivery_Date')) else '—'),
-                html.Td(str(row.get('Purchase_Order', '—'))),
+                html.Td(str(row.get('Order_Number', '—'))),
                 html.Td(f"{row['Quantity_Open']:,.0f}", className="text-center"),
                 html.Td(f"{dias_cobertura:.1f} días", className="text-center"),
                 html.Td(row.get('Vendor Name', '—')),
