@@ -93,10 +93,217 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 # PÁGINA 1: ESTATUS GENERAL — ALE
-layout_estatus = html.Div([
-    html.H2("Estatus general"),
-    dbc.Alert("Esta página está siendo desarrollada por Ale. 🔧", color="warning")
-])
+# ============================================
+
+def cargar_estatus():
+    SKUS_INFO = {
+        '19127': 'Duracell Batteries AA 40pk',
+        '294000': 'Storage Box 27gal Professional',
+        '455151': 'MS 5-tier Storage Rack'
+    }
+    LEAD_TIMES = {'19127': 15.2, '294000': 36.3, '455151': 109.7}
+    PO_FILES = {
+        '19127': 'DATA/raw/POs_19127.csv',
+        '294000': 'DATA/raw/POs_2974000.csv',
+        '455151': 'DATA/raw/POs_455151.csv'
+    }
+
+    inv = pd.read_csv('DATA/raw/Inventario actual.csv', sep=';',
+                      skiprows=2, encoding='utf-8-sig')
+    inv['[SL] Lead time (days)'] = pd.to_numeric(
+        inv['[SL] Lead time (days)'], errors='coerce')
+    inv['In Loc Days of Supply'] = pd.to_numeric(
+        inv['In Loc Days of Supply'], errors='coerce')
+
+    resumen = []
+    pos_abiertas_todas = []
+
+    for sku, nombre in SKUS_INFO.items():
+        sub = inv[inv['Item number'].astype(str).str.strip() == sku]
+        inv_total = sub['End balance'].sum()
+        cobertura = sub[sub['In Loc Days of Supply'] < 999]['In Loc Days of Supply'].mean()
+        fcst_30 = sub['FCST Next 30 Days'].sum()
+
+        po = pd.read_csv(PO_FILES[sku], parse_dates=['Revised_Delivery_Date'])
+        abiertas = po[po['Status'] == 'Open']
+        qty_camino = abiertas['Quantity_Open'].sum()
+        prox_entrega = abiertas['Revised_Delivery_Date'].min() if len(abiertas) else None
+
+        lt = LEAD_TIMES[sku]
+        if cobertura < lt:
+            estado = 'Riesgo'
+            accion = 'Reabastecer'
+            color_estado = 'danger'
+        elif cobertura > lt * 3:
+            estado = 'Sobreinventario'
+            accion = 'Optimizar'
+            color_estado = 'success'
+        elif cobertura < lt * 1.5:
+            estado = 'Monitorear'
+            accion = 'Revisar PO'
+            color_estado = 'warning'
+        else:
+            estado = 'Normal'
+            accion = '—'
+            color_estado = 'secondary'
+
+        resumen.append({
+            'SKU': sku, 'Descripción': nombre,
+            'Inventario': f"{inv_total:,.0f}",
+            'Forecast 30d': f"{fcst_30:,.0f}",
+            'POs en camino': f"{qty_camino:,.0f}",
+            'Cobertura (días)': f"{cobertura:.1f}",
+            'estado_raw': estado, 'color': color_estado,
+            'Acción': accion
+        })
+
+        for _, row in abiertas.iterrows():
+            pos_abiertas_todas.append({
+                'SKU': sku,
+                'PO': row.get('Purchase_Order', '—'),
+                'Fecha entrega': row['Revised_Delivery_Date'].strftime('%d/%m/%Y') if pd.notna(row['Revised_Delivery_Date']) else '—',
+                'Cantidad': f"{row['Quantity_Open']:,.0f}",
+                'Proveedor': row.get('Vendor Name', '—')
+            })
+
+    return resumen, pos_abiertas_todas
+
+def layout_estatus_fn():
+    try:
+        resumen, pos_abiertas = cargar_estatus()
+    except Exception as e:
+        return html.Div([
+            html.H2("Estatus general"),
+            dbc.Alert(f"Error cargando datos: {str(e)}", color="danger")
+        ])
+
+    skus_riesgo = sum(1 for r in resumen if r['estado_raw'] == 'Riesgo')
+    skus_sobre = sum(1 for r in resumen if r['estado_raw'] == 'Sobreinventario')
+    pos_abiertas_count = len(pos_abiertas)
+    proxima = min([p['Fecha entrega'] for p in pos_abiertas]) if pos_abiertas else '—'
+
+    # KPIs
+    kpis = dbc.Row([
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("SKUs en riesgo", className="text-muted small mb-1"),
+            html.H2(str(skus_riesgo), className="text-danger fw-bold mb-0"),
+            html.Span("⚠️", style={"fontSize": "1.5rem"})
+        ])), width=3),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("Posible sobreinventario", className="text-muted small mb-1"),
+            html.H2(str(skus_sobre), className="text-success fw-bold mb-0"),
+            html.Span("📦", style={"fontSize": "1.5rem"})
+        ])), width=3),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("POs abiertas", className="text-muted small mb-1"),
+            html.H2(str(pos_abiertas_count), className="text-primary fw-bold mb-0"),
+            html.Span("📋", style={"fontSize": "1.5rem"})
+        ])), width=3),
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.P("Próxima entrega", className="text-muted small mb-1"),
+            html.H4(proxima, className="text-primary fw-bold mb-0"),
+            html.Span("🚚", style={"fontSize": "1.5rem"})
+        ])), width=3),
+    ], className="mb-4")
+
+    # Tabla de estado de los 3 SKUs
+    filas_tabla = []
+    for r in resumen:
+        filas_tabla.append(html.Tr([
+            html.Td(r['SKU'], style={"color": "#1a3a5c", "fontWeight": "bold"}),
+            html.Td(r['Descripción']),
+            html.Td(r['Inventario'], className="text-center"),
+            html.Td(r['Forecast 30d'], className="text-center"),
+            html.Td(r['POs en camino'], className="text-center"),
+            html.Td(r['Cobertura (días)'], className="text-center"),
+            html.Td(dbc.Badge(r['estado_raw'], color=r['color'], className="px-3")),
+            html.Td(r['Acción'], style={"color": "#1a3a5c"}),
+        ]))
+
+    tabla_skus = dbc.Table([
+        html.Thead(html.Tr([
+            html.Th("SKU"), html.Th("Descripción"),
+            html.Th("Inventario", className="text-center"),
+            html.Th("Forecast 30d", className="text-center"),
+            html.Th("POs en camino", className="text-center"),
+            html.Th("Cobertura (días)", className="text-center"),
+            html.Th("Estado"), html.Th("Acción")
+        ], style={"backgroundColor": "#1a3a5c", "color": "white"})),
+        html.Tbody(filas_tabla)
+    ], bordered=True, hover=True, responsive=True, size="sm")
+
+    # Gráfica cobertura vs lead time
+    LEAD_TIMES = {'19127': 15.2, '294000': 36.3, '455151': 109.7}
+    coberturas = [float(r['Cobertura (días)']) for r in resumen]
+    skus_labels = [r['SKU'] for r in resumen]
+    colores_barras = ['#d62728' if r['estado_raw'] == 'Riesgo'
+                      else '#ff7f0e' if r['estado_raw'] == 'Monitorear'
+                      else '#2ca02c' for r in resumen]
+
+    fig_cob = go.Figure()
+    fig_cob.add_trace(go.Bar(
+        x=skus_labels, y=coberturas,
+        marker_color=colores_barras, name='Cobertura (días)',
+        text=[f"{c:.1f}d" for c in coberturas], textposition='outside'
+    ))
+    fig_cob.add_trace(go.Scatter(
+        x=skus_labels, y=[LEAD_TIMES[s] for s in skus_labels],
+        mode='lines+markers+text',
+        line=dict(color='#1a3a5c', dash='dash', width=2),
+        marker=dict(size=8), name='Lead time (días)',
+        text=[f"{LEAD_TIMES[s]}d" for s in skus_labels],
+        textposition='top center'
+    ))
+    fig_cob.update_layout(
+        height=280, margin=dict(l=20, r=20, t=30, b=20),
+        legend=dict(orientation="h", y=1.15),
+        yaxis_title="Días",
+        plot_bgcolor='white', paper_bgcolor='white'
+    )
+    fig_cob.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
+
+    # Tabla próximas recepciones
+    filas_po = []
+    for p in pos_abiertas:
+        filas_po.append(html.Tr([
+            html.Td(p['SKU'], style={"color": "#1a3a5c", "fontWeight": "bold"}),
+            html.Td(p['PO']),
+            html.Td(p['Fecha entrega'], className="text-center",
+                    style={"color": "#d62728", "fontWeight": "bold"}),
+            html.Td(p['Cantidad'], className="text-center"),
+            html.Td(p['Proveedor']),
+        ]))
+
+    tabla_po = dbc.Table([
+        html.Thead(html.Tr([
+            html.Th("SKU"), html.Th("PO"),
+            html.Th("Fecha entrega", className="text-center"),
+            html.Th("Cantidad", className="text-center"),
+            html.Th("Proveedor")
+        ], style={"backgroundColor": "#1a3a5c", "color": "white"})),
+        html.Tbody(filas_po)
+    ], bordered=True, hover=True, responsive=True, size="sm")
+
+    return html.Div([
+        html.H2("Estatus general", className="mb-4"),
+        kpis,
+        dbc.Card([
+            dbc.CardHeader("Estado de los 3 SKUs"),
+            dbc.CardBody(tabla_skus)
+        ], className="mb-4"),
+        dbc.Row([
+            dbc.Col(dbc.Card([
+                dbc.CardHeader("Cobertura vs Lead time"),
+                dbc.CardBody(dcc.Graph(figure=fig_cob))
+            ]), width=6),
+            dbc.Col(dbc.Card([
+                dbc.CardHeader("Próximas recepciones"),
+                dbc.CardBody(tabla_po)
+            ]), width=6),
+        ])
+    ])
+
+layout_estatus = layout_estatus_fn()
 
 # PÁGINA 2: DEMANDA Y FORECAST — GABI
 layout_demanda = html.Div([
