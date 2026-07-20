@@ -6,6 +6,8 @@ import numpy as np
 import plotly.graph_objects as go
 import joblib
 from datetime import timedelta
+import os
+import requests
 
 # CONFIGURACIÓN
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
@@ -25,6 +27,8 @@ MODELOS = {
     '455151': 'models/modelo_455151_colombia.pkl'
 }
 
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+
 # FUNCIONES DE DATOS
 def cargar_ventas(sku, pais='Colombia'):
     df = pd.read_csv(f"DATA/raw/ventashistoricas_{sku}.csv")
@@ -40,36 +44,62 @@ def get_paises(sku):
     df = pd.read_csv(f"DATA/raw/ventashistoricas_{sku}.csv")
     return ['Todos los países'] + sorted(df['Country'].dropna().unique().tolist())
 
-def hacer_forecast(sku, n_dias=30):
+def hacer_forecast(sku, n_dias=30, pais="Colombia"):
     try:
-        modelo = joblib.load(MODELOS[sku])
-        df = cargar_ventas(sku, 'Colombia')
-        historial = df['demanda'].values.tolist()
-        ultima_fecha = df['fecha'].max()
+        demanda = cargar_ventas(sku, pais)
+
+        if demanda is None or demanda.empty:
+            return None
+
+        ultima_fecha = pd.to_datetime(demanda["fecha"].max())
+        siguiente_fecha = ultima_fecha + pd.Timedelta(1, unit="D")
         fechas_futuras = pd.date_range(
-            start=ultima_fecha + timedelta(days=1), periods=n_dias)
+            start=siguiente_fecha,
+            periods=int(n_dias),
+            freq="D"
+        )
+
         predicciones = []
-        hist_temp = historial.copy()
+        historial = demanda["demanda"].values.tolist()
+
         for fecha in fechas_futuras:
             features = {
-                'dia_semana': fecha.dayofweek,
-                'mes': fecha.month,
-                'semana_anio': fecha.isocalendar()[1],
-                'es_finde': int(fecha.dayofweek >= 5),
-                'lag_7': hist_temp[-7],
-                'lag_14': hist_temp[-14],
-                'lag_30': hist_temp[-30],
-                'media_movil_7': np.mean(hist_temp[-7:]),
-                'media_movil_30': np.mean(hist_temp[-30:]),
+                "sku": str(sku),
+                "dia_semana": int(fecha.dayofweek),
+                "mes": int(fecha.month),
+                "semana_anio": int(fecha.isocalendar()[1]),
+                "es_finde": int(fecha.dayofweek >= 5),
+                "lag_7": float(historial[-7]),
+                "lag_14": float(historial[-14]),
+                "lag_30": float(historial[-30]),
+                "media_movil_7": float(np.mean(historial[-7:])),
+                "media_movil_30": float(np.mean(historial[-30:]))
             }
-            pred = modelo.predict(pd.DataFrame([features]))[0]
+
+            response = requests.post(
+                f"{API_URL}/predict",
+                json=features,
+                timeout=10
+            )
+
+            response.raise_for_status()
+            resultado = response.json()
+
+            pred = float(resultado["prediccion"])
+            pred = max(0, pred)
+
             predicciones.append(pred)
-            hist_temp.append(pred)
-        return pd.DataFrame({
-            'fecha': fechas_futuras,
-            'forecast': [round(p) for p in predicciones]
+            historial.append(pred)
+
+        forecast_df = pd.DataFrame({
+            "fecha": fechas_futuras,
+            "forecast": [round(p) for p in predicciones]
         })
-    except FileNotFoundError:
+
+        return forecast_df
+
+    except Exception as e:
+        print(f"Error generando forecast desde API para SKU {sku}: {e}")
         return None
 
 # LAYOUT
@@ -626,7 +656,7 @@ def actualizar_pagina_demanda(sku, pais, horizonte):
         name='Histórico', line=dict(color=color, width=1.5)
     ))
 
-    forecast_df = hacer_forecast(sku, horizonte)
+    forecast_df = hacer_forecast(sku, horizonte, pais)
     if forecast_df is not None:
         fig.add_trace(go.Scatter(
             x=forecast_df['fecha'], y=forecast_df['forecast'],
@@ -691,4 +721,4 @@ def actualizar_pagina_demanda(sku, pais, horizonte):
     return cards, fig, tabla, fig_est
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=8050, debug=True)
